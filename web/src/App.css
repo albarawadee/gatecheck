@@ -1,0 +1,79 @@
+/* Small additions on top of your globals.css */
+
+.BadgeOk{
+  color: rgba(80, 255, 160, .95);
+}
+.BadgeWarn{
+  color: rgba(255, 214, 120, .95);
+}
+.BadgeBad{
+  color: rgba(255, 90, 90, .95);
+}
+
+.MiniBtn{
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.92);
+  cursor:pointer;
+}
+.MiniBtn:hover{ background: rgba(255,255,255,.09); }
+
+.MiniBtnPrimary{
+  background: rgba(255,255,255,.12);
+  color: rgba(0,0,0,.92);
+  font-weight: 900;
+}
+
+.Table{
+  width: 100%;
+  border-collapse: collapse;
+  overflow:hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.10);
+}
+.Table th, .Table td{
+  padding: 10px 10px;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  color: rgba(255,255,255,.86);
+}
+.Table th{
+  text-align: left;
+  color: rgba(255,255,255,.68);
+  background: rgba(255,255,255,.04);
+}
+.RowDim{
+  color: rgba(255,255,255,.55);
+}
+
+.SplitRow{
+  display:flex;
+  gap: 10px;
+  align-items:center;
+}
+.Grow{ flex: 1; }
+
+.InputSm{
+  width: 100%;
+  height: 46px;
+  border-radius: 16px;
+  padding: 0 14px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(0,0,0,.26);
+  color: rgba(255,255,255,.92);
+  outline:none;
+}
+.InputSm:focus{ border-color: rgba(255,255,255,.30); }
+
+.AllInBanner{
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,90,90,.25);
+  background: rgba(255,90,90,.10);
+  color: rgba(255,120,120,.95);
+  font-weight: 800;
+}

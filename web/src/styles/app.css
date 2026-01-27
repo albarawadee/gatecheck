@@ -1,0 +1,432 @@
+/* ---- Shell (mobile-first) ---- */
+.AppShell{
+  min-height: 100vh;
+  padding: 14px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  display:flex;
+  justify-content:center;
+}
+
+.Device{
+  width: 100%;
+  max-width: 420px;         /* phone canvas */
+  min-height: calc(100vh - 28px);
+  display:flex;
+}
+
+.Screen{
+  width: 100%;
+  display:flex;
+  flex-direction: column;
+}
+
+/* Content + sticky footer */
+.PageBody{
+  padding-bottom: 12px;
+}
+
+.PageFooter{
+  margin-top: auto;
+  padding: 14px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255,255,255,.55);
+}
+
+/* ---- Top Bar ---- */
+.TopBar{
+  padding: 14px 16px 10px;
+}
+
+.TopBarRow{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.BrandRow{
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.BrandLogo{
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.TopTitle{
+  font-weight: 900;
+  letter-spacing: .2px;
+  font-size: 16px;
+  line-height: 1.15;
+}
+
+.TopSub{
+  margin-top: 3px;
+  font-size: 12px;
+  color: rgba(255,255,255,.62);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.TopActions{
+  display:flex;
+  gap: 10px;
+  align-items:center;
+}
+
+/* ---- Stats ---- */
+.StatsRow{
+  display:flex;
+  gap: 12px;
+  padding: 10px 16px 14px;
+}
+
+.StatCard{
+  flex:1;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.05);
+  padding: 14px 14px;
+}
+
+.StatLabel{
+  font-size: 12px;
+  letter-spacing: .2px;
+  color: rgba(255,255,255,.62);
+  font-weight: 800;
+}
+
+.StatValue{
+  margin-top: 6px;
+  font-size: 34px;
+  font-weight: 900;
+  color: rgba(255,255,255,.92);
+}
+
+/* ---- Cards ---- */
+.GateGrid{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  padding: 0 16px 12px;
+}
+
+.GateCard{
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.05);
+}
+
+.GateTitle{
+  font-weight: 900;
+  color: rgba(255,255,255,.90);
+  letter-spacing: .2px;
+}
+
+/* ---- Buttons ---- */
+.BtnMatte{
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.92);
+  border-radius: 16px;
+  padding: 12px 14px;
+  font-weight: 900;
+  letter-spacing: .2px;
+  cursor:pointer;
+}
+
+.BtnMatte:hover{
+  background: rgba(255,255,255,.10);
+}
+
+.BtnGhost{
+  border: 1px solid rgba(255,255,255,.10);
+  background: transparent;
+  color: rgba(255,255,255,.82);
+  border-radius: 16px;
+  padding: 12px 14px;
+  font-weight: 900;
+  letter-spacing: .2px;
+  cursor:pointer;
+}
+
+.IconBtn{
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.92);
+  font-weight: 800;
+  cursor:pointer;
+}
+.IconBtn:hover{ background: rgba(255,255,255,.09); }
+
+.RowButtons{
+  display:flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ---- Inputs ---- */
+.TicketRow{
+  margin-top: 10px;
+  display:flex;
+  gap: 10px;
+}
+
+.TicketInput{
+  flex: 1;
+  height: 46px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.18);
+  padding: 0 12px;
+  color: rgba(255,255,255,.92);
+}
+
+.InputSm{
+  width: 100%;
+  height: 44px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.18);
+  padding: 0 12px;
+  color: rgba(255,255,255,.92);
+}
+
+/* ---- Scan ---- */
+.ScanWrap.Compact{
+  margin-top: 10px;
+}
+.ScanFrame{
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 18px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.20);
+}
+
+.ScanInner{
+  position:absolute;
+  inset:0;
+}
+
+.ScanOverlay{
+  position:absolute;
+  inset: 0;
+  pointer-events:none;
+  opacity: .9;
+}
+
+.ScanCorner{
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(255,255,255,.75);
+  position:absolute;
+  border-radius: 6px;
+}
+.SC1{ left: 12px; top: 12px; border-right: none; border-bottom: none; }
+.SC2{ right: 12px; top: 12px; border-left: none; border-bottom: none; }
+.SC3{ left: 12px; bottom: 12px; border-right: none; border-top: none; }
+.SC4{ right: 12px; bottom: 12px; border-left: none; border-top: none; }
+
+.ScanPlaceholder{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  height:100%;
+  color: rgba(255,255,255,.55);
+  font-weight: 800;
+}
+
+.BtnRowUnder{
+  margin-top: 12px;
+  display:flex;
+  justify-content:center;
+}
+
+/* ---- Modal (Radix Dialog) ---- */
+.ModalBack{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  padding: 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+}
+
+.ModalCard{
+  width: 100%;
+  max-width: 420px;
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(20,20,28,.90);
+  box-shadow: 0 30px 120px rgba(0,0,0,.75);
+  overflow: hidden;
+}
+
+.ModalTop{
+  padding: 14px 14px 10px;
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.ModalTitle{
+  font-weight: 900;
+  letter-spacing: .2px;
+}
+
+.CloseBtn{
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.88);
+  cursor:pointer;
+}
+
+.ModalBody{
+  padding: 12px 14px 14px;
+  max-height: 75vh;
+  overflow: auto;
+}
+
+.Banner{
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.92);
+  font-weight: 900;
+  margin-bottom: 10px;
+}
+.BannerRed{
+  border-color: rgba(255,90,90,.25);
+  background: rgba(255,90,90,.10);
+  color: rgba(255,140,140,.95);
+}
+.BannerGreen{
+  border-color: rgba(120,255,190,.22);
+  background: rgba(120,255,190,.10);
+  color: rgba(190,255,225,.95);
+}
+
+.StudentBlock{ padding: 4px 0 8px; }
+.StudentName{ font-size: 18px; font-weight: 900; }
+.StudentMeta{ margin-top: 6px; display:flex; gap:14px; flex-wrap: wrap; font-size:12px; color: rgba(255,255,255,.70); }
+
+.AllInBanner{
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(120,255,190,.22);
+  background: rgba(120,255,190,.10);
+  color: rgba(190,255,225,.95);
+  font-weight: 900;
+}
+
+.GuestListTitle{
+  margin-top: 8px;
+  margin-bottom: 8px;
+  font-weight: 900;
+  color: rgba(255,255,255,.86);
+}
+
+.GuestRow{
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.04);
+  border-radius: 18px;
+  padding: 12px 12px;
+  display:flex;
+  align-items:flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.GuestLeft{ flex: 1; min-width: 180px; }
+.GuestName{ font-weight: 900; }
+.GuestStatus{ margin-top: 6px; font-weight: 900; font-size: 12px; }
+.BadgeOk{ color: rgba(190,255,225,.95); }
+.BadgeWarn{ color: rgba(255,210,150,.95); }
+
+.GuestActions{ display:flex; gap: 10px; align-items:center; }
+
+.IconBtnSmall{
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.92);
+  cursor:pointer;
+  font-weight: 900;
+}
+.IconBtnOk{ background: rgba(120,255,190,.15); border-color: rgba(120,255,190,.25); }
+.IconBtnDim{ opacity: .55; cursor: default; }
+
+.EditBox{
+  width: 100%;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+
+.SplitRow{ display:flex; gap: 10px; align-items:center; }
+
+.MiniBtn{
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.92);
+  cursor:pointer;
+  font-weight: 900;
+}
+.MiniBtnPrimary{ background: rgba(108,99,255,.18); border-color: rgba(108,99,255,.25); }
+
+.ModalFooterRow{
+  margin-top: 12px;
+  display:flex;
+  justify-content:center;
+}
+
+/* ---- Admin cards ---- */
+.SectionCard{
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.05);
+  padding: 14px;
+}
+
+.InfoLine{
+  margin-top: 8px;
+  font-size: 12px;
+  color: rgba(255,255,255,.70);
+}
+
+.FormGrid{ display:flex; flex-direction:column; gap: 10px; margin-top: 10px; }
+.Field{ display:flex; flex-direction:column; gap: 6px; }
+.FieldLabel{ font-size: 12px; color: rgba(255,255,255,.65); font-weight: 800; }
