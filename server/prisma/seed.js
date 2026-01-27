@@ -1,39 +1,49 @@
-const bcrypt = require("bcryptjs");
+// server/prisma/seed.js
 const { PrismaClient } = require("@prisma/client");
+const bcrypt = require("bcryptjs");
 
 const prisma = new PrismaClient();
 
+const USERS = [
+  // 2 Admin
+  { email: "admin1@graduation.local", role: "ADMIN", password: "bara0000" },
+  { email: "admin2@graduation.local", role: "ADMIN", password: "alaa1111" },
+
+  // 8 Organizers
+  { email: "org1@graduation.local", role: "ORGANIZER", password: "1010101010" },
+  { email: "org2@graduation.local", role: "ORGANIZER", password: "3929293143" },
+  { email: "org3@graduation.local", role: "ORGANIZER", password: "4934232345" },
+  { email: "org4@graduation.local", role: "ORGANIZER", password: "4594593459" },
+  { email: "org5@graduation.local", role: "ORGANIZER", password: "3492349393" },
+  { email: "org6@graduation.local", role: "ORGANIZER", password: "4045034504" },
+  { email: "org7@graduation.local", role: "ORGANIZER", password: "4503450345" },
+  { email: "org8@graduation.local", role: "ORGANIZER", password: "4503450435" },
+];
+
 async function main() {
-  const adminEmail = "admin@example.com";
-  const staffEmail = "staff@example.com";
+  console.log("Seeding users...");
 
-  const adminPass = "Admin@12345";
-  const staffPass = "Staff@12345";
+  for (const u of USERS) {
+    const passwordHash = await bcrypt.hash(u.password, 10);
 
-  const adminHash = await bcrypt.hash(adminPass, 10);
-  const staffHash = await bcrypt.hash(staffPass, 10);
+    await prisma.user.upsert({
+      where: { email: u.email },
+      update: { role: u.role }, // تحديث الدور فقط
+      create: {
+        email: u.email,
+        role: u.role,
+        passwordHash,
+      },
+    });
+  }
 
-  await prisma.user.upsert({
-    where: { email: adminEmail },
-    update: { passwordHash: adminHash, role: "ADMIN" },
-    create: { email: adminEmail, passwordHash: adminHash, role: "ADMIN" },
-  });
-
-  await prisma.user.upsert({
-    where: { email: staffEmail },
-    update: { passwordHash: staffHash, role: "ORGANIZER" },
-    create: { email: staffEmail, passwordHash: staffHash, role: "ORGANIZER" },
-  });
-
-  console.log("Seeded users:");
-  console.log("ADMIN:", adminEmail, adminPass);
-  console.log("ORGANIZER:", staffEmail, staffPass);
+  console.log("✅ Done. Users created/updated.");
 }
 
 main()
   .catch((e) => {
-    console.error(e);
-    process.exit(1);
+    console.error("❌ Seed failed:", e);
+    process.exitCode = 1;
   })
   .finally(async () => {
     await prisma.$disconnect();
