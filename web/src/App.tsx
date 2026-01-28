@@ -1,45 +1,23 @@
 import React from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
-import { AuthProvider, useAuth } from "./lib/auth";
-
-import Splash from "./pages/Splash";
+import { Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Admin from "./pages/Admin";
+import { useAuth } from "./lib/auth";
 
-function Guard({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
-
-  if (loading) return <Splash />;
-  if (!user) return <Navigate to="/login" replace />;
-
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { token } = useAuth();
+  if (!token) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
 export default function App() {
   return (
-    <AuthProvider>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-
-        <Route
-          path="/"
-          element={
-            <Guard>
-              <Dashboard />
-            </Guard>
-          }
-        />
-
-        <Route
-          path="/admin"
-          element={
-            <Guard>
-              <Admin />
-            </Guard>
-          }
-        />
-      </Routes>
-    </AuthProvider>
+    <Routes>
+      <Route path="/" element={<Login />} />
+      <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+      <Route path="/admin" element={<RequireAuth><Admin /></RequireAuth>} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }

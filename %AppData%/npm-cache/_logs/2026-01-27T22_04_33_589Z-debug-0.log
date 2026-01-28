@@ -1,0 +1,36 @@
+0 verbose cli C:\Users\COMPU1\node.exe C:\Users\COMPU1\node_modules\npm\bin\npm-cli.js
+1 info using npm@11.6.2
+2 info using node@v24.13.0
+3 silly config load:file:C:\Users\COMPU1\node_modules\npm\npmrc
+4 silly config load:file:C:\dev\gatecheck\.npmrc
+5 silly config load:file:C:\Users\COMPU1\.npmrc
+6 silly config load:file:C:\Users\COMPU1\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm run dev
+8 verbose argv "run" "dev"
+9 verbose logfile logs-max:10 dir:C:\dev\gatecheck\%AppData%\npm-cache\_logs\2026-01-27T22_04_33_589Z-
+10 verbose logfile C:\dev\gatecheck\%AppData%\npm-cache\_logs\2026-01-27T22_04_33_589Z-debug-0.log
+11 silly logfile done cleaning log files
+12 verbose stack Error: Could not read package.json: Error: ENOENT: no such file or directory, open 'C:\dev\gatecheck\package.json'
+12 verbose stack     at async open (node:internal/fs/promises:637:25)
+12 verbose stack     at async readFile (node:internal/fs/promises:1269:14)
+12 verbose stack     at async read (C:\Users\COMPU1\node_modules\npm\node_modules\@npmcli\package-json\lib\read-package.js:9:18)
+12 verbose stack     at async PackageJson.load (C:\Users\COMPU1\node_modules\npm\node_modules\@npmcli\package-json\lib\index.js:131:31)
+12 verbose stack     at async PackageJson.normalize (C:\Users\COMPU1\node_modules\npm\node_modules\@npmcli\package-json\lib\index.js:117:5)
+12 verbose stack     at async #run (C:\Users\COMPU1\node_modules\npm\lib\commands\run.js:90:13)
+12 verbose stack     at async RunScript.exec (C:\Users\COMPU1\node_modules\npm\lib\commands\run.js:44:7)
+12 verbose stack     at async Npm.exec (C:\Users\COMPU1\node_modules\npm\lib\npm.js:208:9)
+12 verbose stack     at async module.exports (C:\Users\COMPU1\node_modules\npm\lib\cli\entry.js:67:5)
+13 error code ENOENT
+14 error syscall open
+15 error path C:\dev\gatecheck\package.json
+16 error errno -4058
+17 error enoent Could not read package.json: Error: ENOENT: no such file or directory, open 'C:\dev\gatecheck\package.json'
+18 error enoent This is related to npm not being able to find a file.
+18 error enoent
+19 verbose cwd C:\dev\gatecheck
+20 verbose os Windows_NT 10.0.19045
+21 verbose node v24.13.0
+22 verbose npm  v11.6.2
+23 verbose exit -4058
+24 verbose code -4058
+25 error A complete log of this run can be found in: C:\dev\gatecheck\%AppData%\npm-cache\_logs\2026-01-27T22_04_33_589Z-debug-0.log

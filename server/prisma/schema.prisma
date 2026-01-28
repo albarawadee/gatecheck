@@ -8,50 +8,43 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+model Guest {
+  id            Int       @id @default(autoincrement())
+  partyId       String
+  guestName     String
+  seatNumber    Int?
+  inviteNumber  String?
+  tripleName    String?
+  partySize     Int?
+  memberIndex   Int?
+  checkinToken  String    @unique
+  qrPayload     String?
+  qrFile        String?
+  checkedInAt   DateTime?
+  checkedInById Int?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now())
+  User          User?     @relation(fields: [checkedInById], references: [id])
+  Party         Party     @relation(fields: [partyId], references: [id], onDelete: Cascade)
+}
+
+model Party {
+  id           String   @id
+  seatNumber   Int?
+  inviteNumber String?
+  partySize    Int?
+  tripleName   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now())
+  Guest        Guest[]
+}
+
 model User {
   id           Int      @id @default(autoincrement())
   email        String   @unique
   passwordHash String
   role         String   @default("ORGANIZER")
   createdAt    DateTime @default(now())
-updatedAt DateTime @default(now()) @updatedAt
-
-  checkins Guest[] @relation("CheckedInBy")
-}
-
-model Party {
-  id          String   @id
-  seatNumber  Int?
-  inviteNumber String?
-  partySize   Int?
-  tripleName  String?
-
-  createdAt   DateTime @default(now())
-updatedAt DateTime @default(now()) @updatedAt
-
-  guests Guest[]
-}
-
-model Guest {
-  id          Int      @id @default(autoincrement())
-  partyId     String
-  party       Party    @relation(fields: [partyId], references: [id], onDelete: Cascade)
-
-  guestName   String
-  seatNumber  Int?
-  inviteNumber String?
-  tripleName  String?
-  partySize   Int?
-  memberIndex Int?
-
-  checkinToken String  @unique
-  qrPayload    String?
-  qrFile       String?
-
-  checkedInAt   DateTime?
-  checkedInById Int?
-  checkedInBy   User?   @relation("CheckedInBy", fields: [checkedInById], references: [id])
-
-  createdAt   DateTime @default(now())
-updatedAt DateTime @default(now()) @updatedAt
+  updatedAt    DateTime @default(now())
+  Guest        Guest[]
 }

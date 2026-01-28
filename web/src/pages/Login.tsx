@@ -1,35 +1,41 @@
-import React from "react";
+// web/src/pages/Login.tsx
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 
 export default function Login() {
+  const { signIn } = useAuth();
   const nav = useNavigate();
-  const auth = useAuth();
 
-  const [email, setEmail] = React.useState("");
-  const [password, setPassword] = React.useState("");
-  const [showPw, setShowPw] = React.useState(false);
-  const [err, setErr] = React.useState<string>("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr("");
+    setBusy(true);
     try {
-      await auth.login(email.trim(), password);
+      await signIn(email, password);
       nav("/dashboard");
     } catch (e: any) {
       setErr(e?.message || "Invalid email or password.");
+    } finally {
+      setBusy(false);
     }
   }
+
+  const [show, setShow] = useState(false);
 
   return (
     <div className="AuthWrap">
       <div className="AuthCard">
         <div className="AuthTop">
-          <img className="AuthLogo" src="/logo.png" alt="Logo" />
-          <div style={{ textAlign: "center" }}>
+          <img className="AuthLogo" src="/logo.png" alt="logo" />
+          <div>
             <div className="AuthTitle">Graduation Ceremony</div>
-            <div className="AuthSub">Sign in to continue</div>
+            <div className="AuthSub">Staff Sign In</div>
           </div>
         </div>
 
@@ -37,44 +43,34 @@ export default function Login() {
           <div className="Field">
             <input
               className="Input"
+              placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="Email"
-              autoComplete="email"
-              inputMode="email"
-              required
+              autoCapitalize="none"
+              autoCorrect="off"
             />
           </div>
 
           <div className="Field">
             <input
               className="Input"
+              placeholder="Password"
+              type={show ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              autoComplete="current-password"
-              type={showPw ? "text" : "password"}
-              required
             />
-            <button
-              type="button"
-              className="EyeBtn"
-              onClick={() => setShowPw((s) => !s)}
-              aria-label="Toggle password visibility"
-            >
+            <button type="button" className="EyeBtn" onClick={() => setShow((s) => !s)}>
               <span className="EyeIcon" />
             </button>
           </div>
 
-          {err ? (
-            <div style={{ textAlign: "center", color: "rgba(255,120,120,.95)", fontSize: 13 }}>
-              {err}
-            </div>
-          ) : null}
+          {err ? <div className="Badge BadgeBad" style={{ justifySelf: "center" }}>{err}</div> : null}
 
-          <button className="LoginBtn" type="submit">
-            SIGN IN
+          <button className="LoginBtn" disabled={busy}>
+            {busy ? "Signing in..." : "SIGN IN"}
           </button>
+
+          <div className="Footer">programmed by Albara</div>
         </form>
       </div>
     </div>

@@ -1,50 +1,32 @@
-// server/prisma/seed.js
-const { PrismaClient } = require("@prisma/client");
-const bcrypt = require("bcryptjs");
+app.post("/auth/login", async (req, res) => {
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
 
-const prisma = new PrismaClient();
+    if (!email || !password) return fail(res, 400, "Missing email or password");
 
-const USERS = [
-  // 2 Admin
-  { email: "admin1@graduation.local", role: "ADMIN", password: "bara0000" },
-  { email: "admin2@graduation.local", role: "ADMIN", password: "alaa1111" },
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("id,email,role,name,password_hash")
+      .eq("email", email)
+      .single();
 
-  // 8 Organizers
-  { email: "org1@graduation.local", role: "ORGANIZER", password: "1010101010" },
-  { email: "org2@graduation.local", role: "ORGANIZER", password: "3929293143" },
-  { email: "org3@graduation.local", role: "ORGANIZER", password: "4934232345" },
-  { email: "org4@graduation.local", role: "ORGANIZER", password: "4594593459" },
-  { email: "org5@graduation.local", role: "ORGANIZER", password: "3492349393" },
-  { email: "org6@graduation.local", role: "ORGANIZER", password: "4045034504" },
-  { email: "org7@graduation.local", role: "ORGANIZER", password: "4503450345" },
-  { email: "org8@graduation.local", role: "ORGANIZER", password: "4503450435" },
-];
+    if (error || !user) return fail(res, 401, "Invalid email or password");
 
-async function main() {
-  console.log("Seeding users...");
+    const okPass = await bcrypt.compare(password, user.password_hash);
+    if (!okPass) return fail(res, 401, "Invalid email or password");
 
-  for (const u of USERS) {
-    const passwordHash = await bcrypt.hash(u.password, 10);
+    const token = jwt.sign(
+      { sub: user.id, email: user.email, role: user.role, name: user.name },
+      JWT_SECRET,
+      { expiresIn: "30d" }
+    );
 
-    await prisma.user.upsert({
-      where: { email: u.email },
-      update: { role: u.role }, // تحديث الدور فقط
-      create: {
-        email: u.email,
-        role: u.role,
-        passwordHash,
-      },
+    return ok(res, {
+      token,
+      user: { email: user.email, role: user.role, name: user.name },
     });
+  } catch (e) {
+    return fail(res, 500, e.message || "Login failed");
   }
-
-  console.log("✅ Done. Users created/updated.");
-}
-
-main()
-  .catch((e) => {
-    console.error("❌ Seed failed:", e);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+});

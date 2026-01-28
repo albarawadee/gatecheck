@@ -1,554 +1,637 @@
-/**
- * Graduation Ceremony - GateCheck Server (FULL)
- * - Auth: JWT in httpOnly cookie
- * - Roles: ADMIN / ORGANIZER (string)
- * - Scan: QR payload = checkinToken (unique)
- * - Seat Search: lookup guests by seat number
- * - Check / Check All by seat
- * - Admin:
- *   - Import Excel + store file on server (uploads/guest_list.xlsx)
- *   - Add Guest + generate token + QR data URL
- *   - Edit guest name
- *   - Undo check-in
- *   - Delete all data (confirmation required)
- *   - Export Excel (who checked in / who didn’t)
- */
-
+// server/src/index.js
 require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
-const cookieParser = require("cookie-parser");
-const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-const multer = require("multer");
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
-const QRCode = require("qrcode");
-const xlsx = require("xlsx");
+const jwt = require("jsonwebtoken");
 
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const { supabaseAdmin } = require("./supabase");
 
 const app = express();
-
 const PORT = Number(process.env.PORT || 4000);
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
+const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_change_me";
+const CORS_ORIGINS = (process.env.CORS_ORIGINS || "http://localhost:5173")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
-// CORS origins
-const DEFAULT_ORIGINS = [
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-  "http://localhost:5174",
-  "http://127.0.0.1:5174",
-];
-const ORIGINS = (process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(",") : DEFAULT_ORIGINS).map((s) =>
-  s.trim()
+app.use(express.json({ limit: "2mb" }));
+
+app.use(
+  cors({
+    origin: function (origin, cb) {
+      if (!origin) return cb(null, true);
+      if (CORS_ORIGINS.includes(origin)) return cb(null, true);
+      return cb(new Error(`CORS blocked: ${origin}`));
+    },
+    credentials: true,
+  })
 );
 
-app.use(cors({ origin: ORIGINS, credentials: true }));
-app.use(express.json({ limit: "4mb" }));
-app.use(cookieParser());
+// ---------- helpers ----------
+function ok(res, data) {
+  res.json(data);
+}
+function fail(res, code, msg) {
+  res.status(code).json({ error: msg });
+}
 
-// multer (memory)
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
-
-// ---------- Auth helpers ----------
 function signToken(user) {
-  return jwt.sign({ sub: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
+  return jwt.sign(
+    { sub: user.id, email: user.email, role: user.role, name: user.name },
+    JWT_SECRET,
+    { expiresIn: "30d" }
+  );
 }
 
-function readAuth(req) {
-  const token = req.cookies?.session || "";
-  if (!token) return null;
+function auth(req, res, next) {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!token) return fail(res, 401, "Missing token");
+
   try {
-    return jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.user = payload;
+    return next();
   } catch {
-    return null;
+    return fail(res, 401, "Invalid token");
   }
-}
-
-function requireAuth(req, res, next) {
-  const claims = readAuth(req);
-  if (!claims) return res.status(401).json({ error: "Unauthorized" });
-  req.user = claims;
-  next();
 }
 
 function requireAdmin(req, res, next) {
-  const claims = readAuth(req);
-  if (!claims) return res.status(401).json({ error: "Unauthorized" });
-  if (claims.role !== "ADMIN") return res.status(403).json({ error: "Forbidden" });
-  req.user = claims;
-  next();
+  if (!req.user) return fail(res, 401, "Unauthorized");
+  if (String(req.user.role || "").toUpperCase() !== "ADMIN") return fail(res, 403, "Admin only");
+  return next();
 }
 
-// ---------- Excel import parsing ----------
-function normalizeHeader(h) {
-  return String(h || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_");
+function normalizeToken(t) {
+  return String(t || "").trim();
 }
 
-function getCell(row, idxMap, keys, fallback = "") {
-  for (const k of keys) {
-    const i = idxMap.get(k);
-    if (i == null) continue;
-    const v = row[i];
-    if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+function pickRow(row) {
+  // يحول أي شكل أعمدة (camel/snake) لشكل واحد
+  const seat = row.seatNumber ?? row.seat_number ?? null;
+  const invite = row.inviteNumber ?? row.invite_number ?? null;
+  const partyId = row.PartyID ?? row.party_id ?? null;
+  const partySize = row.PartySize ?? row.party_size ?? null;
+  const memberIndex = row.member_index ?? row.party_member_index ?? null;
+
+  const guestName = row.guestName ?? row.guest_name ?? "";
+  const tripleName = row.tripleName ?? row.triple_name ?? null;
+
+  const token = row.CheckinToken ?? row.checkin_token ?? "";
+  const qrPayload = row.QRPayload ?? row.qr_payload ?? null;
+  const qrFile = row.QRFile ?? row.qr_file ?? null;
+
+  const checkedInAt = row.checkedInAt ?? row.checked_in_at ?? null;
+  const checkedInByUserId = row.checkedInByUserId ?? row.checked_in_by_id ?? row.checkedInById ?? null;
+
+  return {
+    id: Number(row.id),
+    seatNumber: seat,
+    inviteNumber: invite,
+    partyId,
+    partySize,
+    memberIndex,
+
+    guestName,
+    tripleName,
+
+    checkinToken: token,
+    qrPayload,
+    qrFile,
+
+    isCheckedIn: !!checkedInAt,
+    checkedInAt,
+    checkedInByUserId: checkedInByUserId ? Number(checkedInByUserId) : null,
+    checkedBy: null,
+  };
+}
+
+async function attachCheckedBy(guests) {
+  const ids = [...new Set(guests.map((g) => g.checkedInByUserId).filter(Boolean))];
+  if (!ids.length) return guests;
+
+  const { data, error } = await supabaseAdmin
+    .from("users")
+    .select("id,name,email")
+    .in("id", ids);
+
+  if (error) return guests;
+
+  const map = new Map((data || []).map((u) => [Number(u.id), u]));
+  return guests.map((g) => {
+    const u = g.checkedInByUserId ? map.get(g.checkedInByUserId) : null;
+    return { ...g, checkedBy: u ? { id: Number(u.id), name: u.name, email: u.email } : null };
+  });
+}
+
+function groupParties(guests) {
+  const map = new Map();
+
+  for (const g of guests) {
+    const key = (g.partyId || g.inviteNumber || String(g.id)).toString();
+    if (!map.has(key)) {
+      map.set(key, {
+        partyId: g.partyId || null,
+        seatNumber: g.seatNumber,
+        inviteNumber: g.inviteNumber || null,
+        partySize: g.partySize || null,
+        members: [],
+      });
+    }
+    map.get(key).members.push(g);
   }
-  return fallback;
-}
 
-/**
- * Flexible columns:
- * - guestName: guest_name | name | guest
- * - seatNumber: seat_number | seat | seatno
- * - inviteNumber: invite_number | invite | invitation
- * - partySize: party_size | size
- * - tripleName: triple_name | student_name | group_name
- * - memberIndex: member_index | member | idx
- * - token: token | checkin_token | qr_token | qr
- * - partyId: party_id (optional; if missing, derived from seat/invite)
- */
-function parseGuestRowsFromExcelBuffer(buffer) {
-  const wb = xlsx.read(buffer, { type: "buffer" });
-  const sheetName = wb.SheetNames[0];
-  const ws = wb.Sheets[sheetName];
-  const rows = xlsx.utils.sheet_to_json(ws, { header: 1, raw: true });
+  const parties = [];
+  for (const p of map.values()) {
+    p.members.sort((a, b) => {
+      const ai = a.memberIndex ?? 9999;
+      const bi = b.memberIndex ?? 9999;
+      if (ai !== bi) return ai - bi;
+      return a.id - b.id;
+    });
 
-  if (!rows.length) return [];
+    const student =
+      p.members.find((m) => (m.memberIndex ?? 0) === 1) ||
+      p.members[0] ||
+      null;
 
-  const header = rows[0];
-  const idxMap = new Map();
-  header.forEach((h, i) => idxMap.set(normalizeHeader(h), i));
+    const checkedCount = p.members.filter((m) => m.isCheckedIn).length;
+    const totalCount = p.members.length;
+    const allIn = totalCount > 0 && checkedCount === totalCount;
 
-  const out = [];
+    parties.push({
+      partyId: p.partyId,
+      seatNumber: p.seatNumber,
+      inviteNumber: p.inviteNumber,
+      partySize: p.partySize,
 
-  for (let r = 1; r < rows.length; r++) {
-    const row = rows[r];
-    if (!row || row.length === 0) continue;
-
-    const guestName = String(getCell(row, idxMap, ["guest_name", "name", "guest"], "")).trim();
-    if (!guestName) continue;
-
-    const seatNumberRaw = getCell(row, idxMap, ["seat_number", "seat", "seatno"], "");
-    const seatNumber = seatNumberRaw === "" ? null : Number(String(seatNumberRaw).replace(/\D/g, ""));
-    const inviteNumberRaw = getCell(row, idxMap, ["invite_number", "invite", "invitation"], "");
-    const inviteNumber = inviteNumberRaw === "" ? null : String(inviteNumberRaw).trim();
-
-    const partySizeRaw = getCell(row, idxMap, ["party_size", "size"], "");
-    const partySize = partySizeRaw === "" ? null : Number(String(partySizeRaw).replace(/\D/g, ""));
-
-    const tripleNameRaw = getCell(row, idxMap, ["triple_name", "student_name", "group_name"], "");
-    const tripleName = tripleNameRaw === "" ? null : String(tripleNameRaw).trim();
-
-    const memberIndexRaw = getCell(row, idxMap, ["member_index", "member", "idx"], "");
-    const memberIndex = memberIndexRaw === "" ? null : Number(String(memberIndexRaw).replace(/\D/g, ""));
-
-    const tokenRaw = getCell(row, idxMap, ["token", "checkin_token", "qr_token", "qr"], "");
-    const checkinToken = String(tokenRaw || "").trim() || crypto.randomUUID();
-
-    const partyIdRaw = getCell(row, idxMap, ["party_id"], "");
-    const partyId =
-      String(partyIdRaw || "").trim() || `SEAT-${Number.isFinite(seatNumber) ? seatNumber : "NA"}-INV-${inviteNumber ?? "NA"}`;
-
-    out.push({
-      partyId,
-      guestName,
-      seatNumber: Number.isFinite(seatNumber) ? seatNumber : null,
-      inviteNumber,
-      partySize: Number.isFinite(partySize) ? partySize : null,
-      tripleName,
-      memberIndex: Number.isFinite(memberIndex) ? memberIndex : null,
-      checkinToken,
+      student,
+      guests: p.members, // نعرض الكل في القائمة (الطالب يكون أول واحد)
+      allIn,
+      checkedCount,
+      totalCount,
     });
   }
 
-  return out;
-}
-
-// ---------- Summary helpers ----------
-async function partySummaryByPartyId(partyId) {
-  const party = await prisma.party.findUnique({
-    where: { id: partyId },
-    include: { guests: { orderBy: { memberIndex: "asc" } } },
-  });
-  if (!party) return null;
-
-  const total = party.guests.length;
-  const checked = party.guests.filter((g) => !!g.checkedInAt).length;
-
-  return {
-    party: {
-      id: party.id,
-      inviteNumber: party.inviteNumber,
-      seatNumber: party.seatNumber,
-      partySize: party.partySize,
-      tripleName: party.tripleName,
-    },
-    stats: { checked, total, allIn: total > 0 && checked === total },
-    guests: party.guests.map((g) => ({
-      id: g.id,
-      guestName: g.guestName,
-      memberIndex: g.memberIndex,
-      checkedInAt: g.checkedInAt,
-    })),
-  };
-}
-
-async function seatSummary(seatNumber) {
-  const seat = Number(seatNumber);
-
-  const guests = await prisma.guest.findMany({
-    where: { seatNumber: seat },
-    orderBy: [{ checkedInAt: "asc" }, { memberIndex: "asc" }, { id: "asc" }],
+  // ترتيب: حسب inviteNumber ثم partyId
+  parties.sort((a, b) => {
+    const ia = a.inviteNumber || "";
+    const ib = b.inviteNumber || "";
+    if (ia !== ib) return ia.localeCompare(ib);
+    return String(a.partyId || "").localeCompare(String(b.partyId || ""));
   });
 
-  const total = guests.length;
-  const checked = guests.filter((g) => !!g.checkedInAt).length;
-
-  return {
-    party: {
-      id: `SEAT-${seat}`,
-      seatNumber: seat,
-      inviteNumber: null,
-      partySize: total,
-      tripleName: null,
-    },
-    stats: { checked, total, allIn: total > 0 && checked === total },
-    guests: guests.map((g) => ({
-      id: g.id,
-      guestName: g.guestName,
-      memberIndex: g.memberIndex,
-      checkedInAt: g.checkedInAt,
-    })),
-    groupMode: "seat",
-    seatNumber: seat,
-  };
+  return parties;
 }
 
-// ---------- Routes ----------
+// ---------- routes ----------
 app.get("/", (req, res) => res.send("GateCheck API OK"));
 
-app.get("/me", (req, res) => {
-  const claims = readAuth(req);
-  if (!claims) return res.json({ user: null });
-  res.json({ user: { id: claims.sub, email: claims.email, role: claims.role } });
-});
-
-// Auth
+// ---- auth
 app.post("/auth/login", async (req, res) => {
-  const email = String(req.body?.email || "").trim().toLowerCase();
-  const password = String(req.body?.password || "");
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
 
-  if (!email || !password) return res.status(400).json({ error: "Missing email or password" });
+    if (!email || !password) return fail(res, 400, "Missing email or password");
 
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) return res.status(401).json({ error: "Invalid email or password" });
+    // مهم: عمود كلمة المرور عندك password_hash
+    const { data: user, error } = await supabaseAdmin
+      .from("users")
+      .select("id,email,name,role,password_hash")
+      .eq("email", email)
+      .maybeSingle();
 
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return res.status(401).json({ error: "Invalid email or password" });
+    if (error || !user) return fail(res, 401, "Invalid email or password");
 
-  const token = signToken(user);
-  res.cookie("session", token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: false,
-    maxAge: 7 * 24 * 3600 * 1000,
-  });
+    const okPass = await bcrypt.compare(password, user.password_hash);
+    if (!okPass) return fail(res, 401, "Invalid email or password");
 
-  res.json({ id: user.id, email: user.email, role: user.role });
-});
+    const token = signToken(user);
 
-app.post("/auth/logout", (req, res) => {
-  res.clearCookie("session");
-  res.json({ ok: true });
-});
-
-// Stats overall
-app.get("/stats", requireAuth, async (req, res) => {
-  const total = await prisma.guest.count();
-  const checked = await prisma.guest.count({ where: { checkedInAt: { not: null } } });
-  res.json({ total, checked, allIn: total > 0 && checked === total });
-});
-
-// Seat Search
-app.get("/lookup/seat/:seatNo", requireAuth, async (req, res) => {
-  const seatNo = String(req.params.seatNo || "").trim();
-  if (!seatNo) return res.status(400).json({ error: "Missing seat number" });
-
-  const seat = Number(seatNo.replace(/\D/g, ""));
-  if (!Number.isFinite(seat)) return res.status(400).json({ error: "Invalid seat number" });
-
-  const summary = await seatSummary(seat);
-  if (!summary.stats.total) return res.status(404).json({ error: "Not found" });
-
-  res.json(summary);
-});
-
-// Check single guest
-app.post("/checkin", requireAuth, async (req, res) => {
-  const guestId = Number(req.body?.guestId);
-  if (!Number.isFinite(guestId)) return res.status(400).json({ error: "Missing guestId" });
-
-  const g = await prisma.guest.findUnique({ where: { id: guestId } });
-  if (!g) return res.status(404).json({ error: "Not found" });
-
-  let already = false;
-  if (g.checkedInAt) {
-    already = true;
-  } else {
-    await prisma.guest.update({
-      where: { id: guestId },
-      data: { checkedInAt: new Date(), checkedInById: req.user.sub },
+    return ok(res, {
+      token,
+      user: { id: user.id, email: user.email, name: user.name, role: user.role },
     });
+  } catch (e) {
+    return fail(res, 500, e.message || "Login failed");
   }
-
-  if (Number.isFinite(g.seatNumber)) {
-    const summary = await seatSummary(g.seatNumber);
-    return res.json({ ...summary, already });
-  }
-
-  const summary = await partySummaryByPartyId(g.partyId);
-  res.json({ ...summary, already });
 });
 
-// Check all by seat
-app.post("/checkin/seat", requireAuth, async (req, res) => {
-  const seatNumber = Number(req.body?.seatNumber);
-  if (!Number.isFinite(seatNumber)) return res.status(400).json({ error: "Missing seatNumber" });
-
-  const now = new Date();
-  const r = await prisma.guest.updateMany({
-    where: { seatNumber, checkedInAt: null },
-    data: { checkedInAt: now, checkedInById: req.user.sub },
-  });
-
-  const summary = await seatSummary(seatNumber);
-  res.json({ ok: true, newlyChecked: r.count, ...summary });
+app.get("/me", auth, async (req, res) => {
+  return ok(res, { email: req.user.email, role: req.user.role, name: req.user.name });
 });
 
-// Scan QR (payload = token)
-app.post("/scan", requireAuth, async (req, res) => {
-  const payload = String(req.body?.payload || "").trim();
-  if (!payload) return res.status(400).json({ error: "Missing payload" });
+// ---- stats (بدون views)
+app.get("/stats", auth, async (req, res) => {
+  try {
+    const total = await supabaseAdmin
+      .from("guests")
+      .select("id", { count: "exact", head: true });
 
-  const guest = await prisma.guest.findUnique({ where: { checkinToken: payload } });
-  if (!guest) return res.status(404).json({ error: "QR not recognized" });
+    const checked = await supabaseAdmin
+      .from("guests")
+      .select("id", { count: "exact", head: true })
+      .not("checkedInAt", "is", null);
 
-  let scanAction = "already";
-  if (!guest.checkedInAt) {
-    await prisma.guest.update({
-      where: { id: guest.id },
-      data: { checkedInAt: new Date(), checkedInById: req.user.sub },
+    if (total.error) return fail(res, 500, total.error.message);
+    if (checked.error) return fail(res, 500, checked.error.message);
+
+    return ok(res, {
+      totalGuests: total.count || 0,
+      checkedIn: checked.count || 0,
     });
-    scanAction = "checked";
+  } catch (e) {
+    return fail(res, 500, e.message || "Stats failed");
   }
-
-  if (Number.isFinite(guest.seatNumber)) {
-    const summary = await seatSummary(guest.seatNumber);
-    return res.json({ ...summary, scannedGuestId: guest.id, scanAction });
-  }
-
-  const summary = await partySummaryByPartyId(guest.partyId);
-  res.json({ ...summary, scannedGuestId: guest.id, scanAction });
 });
 
-// ---------- Admin ----------
-app.patch("/admin/guests/:id", requireAdmin, async (req, res) => {
-  const id = Number(req.params.id);
-  const guestName = req.body?.guestName != null ? String(req.body.guestName).trim() : null;
+// ---- seat search (يعتمد على seatNumber بالأساس، ولو فاضي يجرب seat_number)
+app.get("/seat/:seat", auth, async (req, res) => {
+  try {
+    const seatRaw = String(req.params.seat || "").trim();
+    if (!seatRaw) return fail(res, 400, "Invalid seat number");
 
-  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
-  if (!guestName) return res.status(400).json({ error: "Missing guestName" });
+    const seatInt = parseInt(seatRaw, 10);
+    let data = null;
 
-  const g = await prisma.guest.update({ where: { id }, data: { guestName } });
-  res.json({ ok: true, id: g.id, guestName: g.guestName });
-});
+    if (Number.isFinite(seatInt)) {
+      const r1 = await supabaseAdmin
+        .from("guests")
+        .select("*")
+        .eq("seatNumber", seatInt);
 
-// UNDO (Admin)
-app.post("/admin/undo", requireAdmin, async (req, res) => {
-  const guestId = Number(req.body?.guestId);
-  if (!Number.isFinite(guestId)) return res.status(400).json({ error: "Missing guestId" });
+      if (r1.error) return fail(res, 500, r1.error.message);
+      data = r1.data || [];
 
-  const g = await prisma.guest.findUnique({ where: { id: guestId } });
-  if (!g) return res.status(404).json({ error: "Not found" });
+      if (!data.length) {
+        const r2 = await supabaseAdmin
+          .from("guests")
+          .select("*")
+          .eq("seat_number", seatRaw);
 
-  await prisma.guest.update({
-    where: { id: guestId },
-    data: { checkedInAt: null, checkedInById: null },
-  });
+        if (r2.error) return fail(res, 500, r2.error.message);
+        data = r2.data || [];
+      }
+    } else {
+      const r = await supabaseAdmin
+        .from("guests")
+        .select("*")
+        .eq("seat_number", seatRaw);
 
-  if (Number.isFinite(g.seatNumber)) {
-    const summary = await seatSummary(g.seatNumber);
-    return res.json({ ok: true, ...summary });
-  }
-
-  const summary = await partySummaryByPartyId(g.partyId);
-  res.json({ ok: true, ...summary });
-});
-
-// Delete all data (Admin)
-app.post("/admin/delete-data", requireAdmin, async (req, res) => {
-  const confirm = String(req.body?.confirm || "");
-  if (confirm !== "DELETE") return res.status(400).json({ error: "Confirmation required" });
-
-  await prisma.$transaction(async (tx) => {
-    await tx.guest.deleteMany();
-    await tx.party.deleteMany();
-  });
-
-  res.json({ ok: true });
-});
-
-// Export Excel (Admin)
-app.get("/admin/export", requireAdmin, async (req, res) => {
-  const guests = await prisma.guest.findMany({
-    orderBy: [{ seatNumber: "asc" }, { memberIndex: "asc" }, { id: "asc" }],
-  });
-
-  const rows = guests.map((g) => ({
-    guestId: g.id,
-    guestName: g.guestName,
-    seatNumber: g.seatNumber ?? "",
-    inviteNumber: g.inviteNumber ?? "",
-    memberIndex: g.memberIndex ?? "",
-    token: g.checkinToken,
-    checkedIn: g.checkedInAt ? "YES" : "NO",
-    checkedInAt: g.checkedInAt ? g.checkedInAt.toISOString() : "",
-  }));
-
-  const wb = xlsx.utils.book_new();
-  const ws = xlsx.utils.json_to_sheet(rows);
-  xlsx.utils.book_append_sheet(wb, ws, "Checkins");
-
-  const buf = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
-
-  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="graduation_checkins.xlsx"`);
-  res.send(buf);
-});
-
-// Import Excel + store file
-app.post("/admin/import-excel-store", requireAdmin, upload.single("file"), async (req, res) => {
-  const mode = String(req.query.mode || "replace"); // replace | upsert
-  if (!req.file?.buffer) return res.status(400).json({ error: "Missing file" });
-
-  const uploadsDir = path.join(process.cwd(), "uploads");
-  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-
-  const savedAbs = path.join(uploadsDir, "guest_list.xlsx");
-  fs.writeFileSync(savedAbs, req.file.buffer);
-
-  const rows = parseGuestRowsFromExcelBuffer(req.file.buffer);
-
-  await prisma.$transaction(async (tx) => {
-    if (mode === "replace") {
-      await tx.guest.deleteMany();
-      await tx.party.deleteMany();
+      if (r.error) return fail(res, 500, r.error.message);
+      data = r.data || [];
     }
 
-    // upsert parties
-    const partyMap = new Map();
-    for (const r of rows) {
-      if (!partyMap.has(r.partyId)) {
-        partyMap.set(r.partyId, {
-          id: r.partyId,
-          inviteNumber: r.inviteNumber || null,
-          seatNumber: r.seatNumber ?? null,
-          partySize: r.partySize ?? null,
-          tripleName: r.tripleName || null,
-        });
+    if (!data.length) return ok(res, { seatNumber: seatRaw, parties: [] });
+
+    let guests = data.map(pickRow);
+    guests = await attachCheckedBy(guests);
+
+    const parties = groupParties(guests);
+    return ok(res, { seatNumber: parties[0]?.seatNumber ?? seatRaw, parties });
+  } catch (e) {
+    return fail(res, 500, e.message || "Seat lookup failed");
+  }
+});
+
+// ---- checkin by token (QR) يطابق على CheckinToken
+app.post("/checkin/token", auth, async (req, res) => {
+  try {
+    const token = normalizeToken(req.body.token);
+    if (!token) return fail(res, 400, "Missing token");
+
+    // جرّب الأعمدة المحتملة
+    let found = null;
+
+    const tries = [
+      supabaseAdmin.from("guests").select("*").eq("CheckinToken", token).limit(1),
+      supabaseAdmin.from("guests").select("*").eq("checkin_token", token).limit(1),
+      supabaseAdmin.from("guests").select("*").eq("QRPayload", token).limit(1),
+      supabaseAdmin.from("guests").select("*").eq("qr_payload", token).limit(1),
+    ];
+
+    for (const q of tries) {
+      const r = await q;
+      if (r.error) continue;
+      if (r.data && r.data.length) {
+        found = r.data[0];
+        break;
       }
     }
 
-    for (const p of partyMap.values()) {
-      await tx.party.upsert({ where: { id: p.id }, update: p, create: p });
+    if (!found) return fail(res, 404, "Token not found");
+
+    const g = pickRow(found);
+    const already = g.isCheckedIn;
+
+    if (!already) {
+      const now = new Date().toISOString();
+
+      const upd = await supabaseAdmin
+        .from("guests")
+        .update({
+          checkedInAt: now,
+          checkedInByUserId: Number(req.user.sub),
+        })
+        .eq("id", g.id);
+
+      if (upd.error) return fail(res, 500, upd.error.message);
     }
 
-    // upsert guests by checkinToken (unique)
-    for (const r of rows) {
-      await tx.guest.upsert({
-        where: { checkinToken: r.checkinToken },
-        update: {
-          partyId: r.partyId,
-          guestName: r.guestName,
-          inviteNumber: r.inviteNumber || null,
-          seatNumber: r.seatNumber ?? null,
-          partySize: r.partySize ?? null,
-          tripleName: r.tripleName || null,
-          memberIndex: r.memberIndex ?? null,
-          qrPayload: r.checkinToken,
-        },
-        create: {
-          partyId: r.partyId,
-          guestName: r.guestName,
-          inviteNumber: r.inviteNumber || null,
-          seatNumber: r.seatNumber ?? null,
-          partySize: r.partySize ?? null,
-          tripleName: r.tripleName || null,
-          memberIndex: r.memberIndex ?? null,
-          checkinToken: r.checkinToken,
-          qrPayload: r.checkinToken,
-        },
-      });
-    }
-  });
+    // رجّع بيانات الكرسي كاملة (Popup)
+    const seatNumber = g.seatNumber ?? "";
+    // reuse seat endpoint logic سريع:
+    req.params.seat = String(seatNumber);
+    const seatRes = await (async () => {
+      const seatRaw = String(seatNumber).trim();
+      const seatInt = parseInt(seatRaw, 10);
 
-  res.json({ ok: true, savedAs: "uploads/guest_list.xlsx", imported: rows.length, mode });
+      let data = [];
+      if (Number.isFinite(seatInt)) {
+        const r = await supabaseAdmin.from("guests").select("*").eq("seatNumber", seatInt);
+        if (!r.error) data = r.data || [];
+        if (!data.length) {
+          const r2 = await supabaseAdmin.from("guests").select("*").eq("seat_number", seatRaw);
+          if (!r2.error) data = r2.data || [];
+        }
+      } else {
+        const r = await supabaseAdmin.from("guests").select("*").eq("seat_number", seatRaw);
+        if (!r.error) data = r.data || [];
+      }
+
+      let guests = (data || []).map(pickRow);
+      guests = await attachCheckedBy(guests);
+      return groupParties(guests);
+    })();
+
+    return ok(res, {
+      status: already ? "already_checked" : "checked",
+      seatNumber: seatNumber,
+      parties: seatRes,
+    });
+  } catch (e) {
+    return fail(res, 500, e.message || "Checkin failed");
+  }
 });
 
-// Add guest + QR
-app.post("/admin/add-guest", requireAdmin, async (req, res) => {
-  const guestName = String(req.body?.guestName || "").trim();
-  const inviteNumber = req.body?.inviteNumber != null ? String(req.body.inviteNumber).trim() : null;
-  const seatNumber = req.body?.seatNumber != null ? Number(req.body.seatNumber) : null;
+// ---- checkin single guest
+app.post("/checkin/guest/:id", auth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return fail(res, 400, "Invalid guest id");
 
-  if (!guestName) return res.status(400).json({ error: "Missing guestName" });
+    const r = await supabaseAdmin.from("guests").select("*").eq("id", id).maybeSingle();
+    if (r.error) return fail(res, 500, r.error.message);
+    if (!r.data) return fail(res, 404, "Guest not found");
 
-  const token = crypto.randomUUID();
+    const g = pickRow(r.data);
+    if (g.isCheckedIn) return ok(res, { status: "already_checked" });
 
-  // group manual by seat if provided
-  const partyId = Number.isFinite(seatNumber) ? `SEAT-${seatNumber}-MANUAL` : `MANUAL-${Date.now()}`;
+    const now = new Date().toISOString();
+    const upd = await supabaseAdmin
+      .from("guests")
+      .update({ checkedInAt: now, checkedInByUserId: Number(req.user.sub) })
+      .eq("id", id);
 
-  await prisma.party.upsert({
-    where: { id: partyId },
-    update: {
-      seatNumber: Number.isFinite(seatNumber) ? seatNumber : null,
-      inviteNumber: inviteNumber || null,
-    },
-    create: {
-      id: partyId,
-      seatNumber: Number.isFinite(seatNumber) ? seatNumber : null,
-      inviteNumber: inviteNumber || null,
-      partySize: null,
-      tripleName: null,
-    },
-  });
+    if (upd.error) return fail(res, 500, upd.error.message);
 
-  const currentCount = await prisma.guest.count({ where: { partyId } });
+    return ok(res, { status: "checked" });
+  } catch (e) {
+    return fail(res, 500, e.message || "Check failed");
+  }
+});
 
-  await prisma.guest.create({
-    data: {
-      partyId,
-      guestName,
-      inviteNumber: inviteNumber || null,
-      seatNumber: Number.isFinite(seatNumber) ? seatNumber : null,
-      partySize: null,
-      tripleName: null,
-      memberIndex: currentCount + 1,
-      checkinToken: token,
-      qrPayload: token,
-    },
-  });
+// ---- check all by partyId
+app.post("/checkin/party", auth, async (req, res) => {
+  try {
+    const partyId = String(req.body.partyId || "").trim();
+    if (!partyId) return fail(res, 400, "Missing partyId");
 
-  const qrDataUrl = await QRCode.toDataURL(token, { margin: 1, width: 420 });
-  res.json({ token, qrDataUrl });
+    const now = new Date().toISOString();
+
+    // جرّب PartyID أول
+    let upd = await supabaseAdmin
+      .from("guests")
+      .update({ checkedInAt: now, checkedInByUserId: Number(req.user.sub) })
+      .eq("PartyID", partyId)
+      .is("checkedInAt", null);
+
+    if (upd.error) {
+      // جرّب party_id
+      upd = await supabaseAdmin
+        .from("guests")
+        .update({ checkedInAt: now, checkedInByUserId: Number(req.user.sub) })
+        .eq("party_id", partyId)
+        .is("checkedInAt", null);
+
+      if (upd.error) return fail(res, 500, upd.error.message);
+    }
+
+    return ok(res, { status: "checked_all" });
+  } catch (e) {
+    return fail(res, 500, e.message || "Check all failed");
+  }
+});
+
+// ---- undo (Admin)
+app.post("/undo/guest/:id", auth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return fail(res, 400, "Invalid guest id");
+
+    const upd = await supabaseAdmin
+      .from("guests")
+      .update({ checkedInAt: null, checkedInByUserId: null })
+      .eq("id", id);
+
+    if (upd.error) return fail(res, 500, upd.error.message);
+    return ok(res, { status: "undone" });
+  } catch (e) {
+    return fail(res, 500, e.message || "Undo failed");
+  }
+});
+
+// ---- admin edit guest name
+app.put("/admin/guest/:id", auth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return fail(res, 400, "Invalid guest id");
+
+    const guestName = req.body.guestName !== undefined ? String(req.body.guestName).trim() : undefined;
+    const tripleName = req.body.tripleName !== undefined ? String(req.body.tripleName).trim() : undefined;
+
+    const patch = {};
+    if (guestName !== undefined) patch.guestName = guestName;
+    if (tripleName !== undefined) patch.tripleName = tripleName;
+
+    const upd = await supabaseAdmin.from("guests").update(patch).eq("id", id);
+    if (upd.error) return fail(res, 500, upd.error.message);
+
+    return ok(res, { status: "updated" });
+  } catch (e) {
+    return fail(res, 500, e.message || "Edit failed");
+  }
+});
+// ====== ADD THIS in server/src/index.js (near helpers) ======
+const crypto = require("crypto");
+
+function randomToken(len = 12) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const bytes = crypto.randomBytes(len);
+  let out = "";
+  for (let i = 0; i < len; i++) out += alphabet[bytes[i] % alphabet.length];
+  return out;
+}
+
+async function getGuestColumnSet() {
+  const r = await supabaseAdmin.from("guests").select("*").limit(1);
+  if (r.error || !r.data || !r.data[0]) return new Set();
+  return new Set(Object.keys(r.data[0]));
+}
+
+function buildInsertGuestPayload(cols, { seatNumber, inviteNumber, guestName, tripleName, partyId, token }) {
+  const p = {};
+  const set = (k, v) => {
+    if (cols.has(k)) p[k] = v;
+  };
+
+  // seat
+  set("seatNumber", seatNumber);
+  set("seat_number", String(seatNumber));
+
+  // invite
+  set("inviteNumber", inviteNumber);
+  set("invite_number", inviteNumber);
+
+  // names
+  set("guestName", guestName);
+  set("guest_name", guestName);
+  set("tripleName", tripleName);
+  set("triple_name", tripleName);
+
+  // party
+  set("PartyID", partyId);
+  set("party_id", partyId);
+  set("PartySize", 1);
+  set("party_size", 1);
+
+  // member index (حسب الموجود في جدولك)
+  set("PartyMemberIndex", 1);
+  set("party_member_index", 1);
+  set("member_index", 1);
+
+  // token + QR
+  set("CheckinToken", token);
+  set("checkin_token", token);
+  set("QRPayload", token);
+  set("qr_payload", token);
+  set("QRFile", null);
+  set("qr_file", null);
+
+  // checkin fields (بدون checkedInById نهائيًا)
+  set("checkedInAt", null);
+  set("checked_in_at", null);
+  set("checkedInByUserId", null);
+  set("checked_in_by_id", null);
+
+  return p;
+}
+
+// ====== ADD THIS route in server/src/index.js ======
+app.post("/admin/guest", auth, requireAdmin, async (req, res) => {
+  try {
+    const seatRaw = req.body.seatNumber ?? req.body.seat_number;
+    const inviteRaw = req.body.inviteNumber ?? req.body.invite_number;
+    const nameRaw = req.body.guestName ?? req.body.guest_name;
+    const tripleRaw = req.body.tripleName ?? req.body.triple_name;
+
+    const seatNumber = parseInt(String(seatRaw || "").trim(), 10);
+    const inviteNumber = String(inviteRaw || "").trim();
+    const guestName = String(nameRaw || "").trim();
+    const tripleName = tripleRaw ? String(tripleRaw).trim() : null;
+
+    if (!Number.isFinite(seatNumber)) return fail(res, 400, "Invalid seat number");
+    if (!inviteNumber || !/^\d{8}$/.test(inviteNumber)) return fail(res, 400, "رقم الجلوس لازم يكون 8 أرقام");
+    if (!guestName) return fail(res, 400, "Missing guest name");
+
+    const partyId = `S${seatNumber}-${inviteNumber}`;
+    const token = randomToken(12);
+
+    const cols = await getGuestColumnSet();
+    const payload = buildInsertGuestPayload(cols, { seatNumber, inviteNumber, guestName, tripleName, partyId, token });
+
+    const ins = await supabaseAdmin.from("guests").insert(payload).select("*").single();
+    if (ins.error) return fail(res, 500, ins.error.message);
+
+    return ok(res, {
+      status: "created",
+      token,            // هذا اللي بتولّد منه QR في الفرونت
+      qrPayload: token, // نفس token
+      guest: pickRow(ins.data),
+    });
+  } catch (e) {
+    return fail(res, 500, e.message || "Add guest failed");
+  }
+});
+// ---- Admin: list organizers
+app.get("/admin/organizers", auth, requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("users")
+      .select("id,name,email,role")
+      .eq("role", "ORGANIZER")
+      .order("id", { ascending: true });
+
+    if (error) return fail(res, 500, error.message);
+    return ok(res, { organizers: data || [] });
+  } catch (e) {
+    return fail(res, 500, e.message || "Failed to load organizers");
+  }
+});
+
+// ---- Admin: update organizer name
+app.put("/admin/organizers/:id", auth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return fail(res, 400, "Invalid organizer id");
+
+    const name = String(req.body.name || "").trim();
+    if (!name) return fail(res, 400, "Missing name");
+
+    // حماية: لا يعدّل إلا المنظمين
+    const { data: org, error: e1 } = await supabaseAdmin
+      .from("users")
+      .select("id,role")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (e1) return fail(res, 500, e1.message);
+    if (!org) return fail(res, 404, "Organizer not found");
+    if (String(org.role).toUpperCase() !== "ORGANIZER") return fail(res, 400, "Not an organizer");
+
+    const { error: e2 } = await supabaseAdmin
+      .from("users")
+      .update({ name })
+      .eq("id", id);
+
+    if (e2) return fail(res, 500, e2.message);
+
+    return ok(res, { status: "updated" });
+  } catch (e) {
+    return fail(res, 500, e.message || "Failed to update organizer");
+  }
+});
+
+// ---------- error handler ----------
+app.use((err, req, res, next) => {
+  console.error(err);
+  return fail(res, 500, err.message || "Server error");
 });
 
 app.listen(PORT, () => {
-  console.log(`GateCheck API OK on http://localhost:${PORT}`);
+  console.log(`GateCheck API running on http://localhost:${PORT}`);
 });

@@ -1,7 +1,0 @@
-0 verbose cli C:\Users\COMPU1\node.exe C:\Users\COMPU1\node_modules\npm\bin\npm-cli.js
-1 info using npm@11.6.2
-2 info using node@v24.13.0
-3 silly config load:file:C:\Users\COMPU1\node_modules\npm\npmrc
-4 silly config load:file:C:\dev\gatecheck\server\.npmrc
-5 silly config load:file:C:\Users\COMPU1\.npmrc
-6 silly config load:file:C:\Users\COMPU1\AppData\Roaming\npm\etc\npmrc
